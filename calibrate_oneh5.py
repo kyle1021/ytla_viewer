@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 import numpy as np
 import sys
 import os.path
@@ -182,5 +182,5 @@ for s in range(nsb):
 				print >> f, np.abs(rawcross_ca[s, b, k])
 			f.close()
 
-
+print 'done.'
 
