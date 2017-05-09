@@ -13,6 +13,7 @@
 
 from __future__ import unicode_literals
 import sys, os, os.path
+from subprocess import call
 
 import matplotlib
 # Make sure that we are using QT5
@@ -33,12 +34,13 @@ class MyMplCanvas(FigureCanvas):
     """Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
 
     def __init__(self, parent=None, width=5, height=4, dpi=100):
-        fig = Figure(figsize=(width, height), dpi=dpi)
-        self.axes = fig.add_subplot(111)
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        self.ampax = self.fig.add_subplot(211)
+        self.phaax = self.fig.add_subplot(212)
 
         self.compute_initial_figure()
 
-        FigureCanvas.__init__(self, fig)
+        FigureCanvas.__init__(self, self.fig)
         self.setParent(parent)
 
         FigureCanvas.setSizePolicy(self,
@@ -53,40 +55,70 @@ class MyMplCanvas(FigureCanvas):
 class MyInteractCanvas(MyMplCanvas):
     """Canvas to plot loaded data"""
 
-    def update_figure(self, x, y):
-	self.axes.cla()
-	#print 'update_figure', x, y
-	self.axes.plot(x, y)
+    def clear(self):
+	self.ampax.cla()
+	self.phaax.cla()
+
+
+    def add_trace(self, panel, x, y, **kwargs):
+	if (panel == 'amp'):
+	    ax = self.ampax
+	elif (panel == 'pha'):
+	    ax = self.phaax
+
+	ax.plot(x, y, **kwargs)
+	ax.legend()
 	self.draw()
 
 
+    def update_info(self, panel, **kwargs):
+	if (panel == 'amp'):
+	    ax = self.ampax
+	elif (panel == 'pha'):
+	    ax = self.phaax
 
-class MyDynamicMplCanvas(MyMplCanvas):
-    """A canvas that updates itself every second with a new plot."""
+	title = kwargs.get('title', '')
+	if (title):
+	    self.fig.suptitle(title)
 
-    def __init__(self, *args, **kwargs):
-        MyMplCanvas.__init__(self, *args, **kwargs)
-        timer = QtCore.QTimer(self)
-        timer.timeout.connect(self.update_figure)
-        timer.start(1000)
+	xlabel = kwargs.get('xlabel', '')
+	if (xlabel):
+	    ax.set_xlabel(xlabel)
 
-    def compute_initial_figure(self):
-        self.axes.plot([0, 1, 2, 3], [1, 2, 0, 4], 'r')
+	ylabel = kwargs.get('ylabel', '')
+	if (ylabel):
+	    ax.set_ylabel(ylabel)
 
-    def update_figure(self):
-        # Build a list of 4 random integers between 0 and 10 (both inclusive)
-        l = [random.randint(0, 10) for i in range(4)]
-        self.axes.cla()
-        self.axes.plot([0, 1, 2, 3], l, 'r')
-        self.draw()
+	logY = kwargs.get('logY', 'keep')
+	if (logY=='on'):
+	    ax.set_yscale('log')
+	elif (logY=='off'):
+	    ax.set_yscale('linear')
+	elif (logY=='keep'):
+	    pass
+
+	yLim = kwargs.get('yLim', [])
+	if (len(yLim) == 2):
+	    ymin, ymax = yLim
+	    ax.set_ylim(ymin, ymax)
+	else:
+	    ax.set_ylim(auto=True)
+
+	self.draw()
+
+
+    def savefig(self, fname):
+	self.fig.savefig(fname)
+
 
 
 class ApplicationWindow(QtWidgets.QMainWindow):
 
-    def __init__(self, fname=''):
+    def __init__(self, fname='', bindir=''):
         QtWidgets.QMainWindow.__init__(self)
 
 	self.fname = fname
+	self.bindir = bindir
 
 	self.initUI()
 
@@ -128,17 +160,98 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
 	#self.placeHolder(self.tab1)
 	self.plotTab(self.tab1)
-	self.placeHolder(self.tab2)
-	self.placeHolder(self.tab3)
+	self.calTab(self.tab2)
+	self.convertTab(self.tab3)
+	#self.placeHolder(self.tab3)
 	
 
 	# right pane -- plots
-	self.right.layout = QtWidgets.QVBoxLayout(self.right)
-	self.ampplot = MyInteractCanvas(self.right, width=6, height=4, dpi=100)
-	self.phaplot = MyInteractCanvas(self.right, width=6, height=4, dpi=100)
-	self.right.layout.addWidget(self.ampplot)
-	self.right.layout.addWidget(self.phaplot)
+	self.right.layout = QtWidgets.QGridLayout(self.right)
+	#self.ampplot = MyInteractCanvas(self.right, width=6, height=4, dpi=100)
+	#self.phaplot = MyInteractCanvas(self.right, width=6, height=4, dpi=100)
+	self.plot = MyInteractCanvas(self.right, width=6, height=8, dpi=100)
+	#self.right.layout.addWidget(self.ampplot, 0, 0)
+	#self.right.layout.addWidget(self.phaplot, 1, 0)
+	self.right.layout.addWidget(self.plot, 0, 0, 3, 1)
 
+	self.right.saveBtn = QtWidgets.QPushButton('Save fig ...', self.right)
+	self.right.layout.addWidget(self.right.saveBtn, 0, 1)
+	self.right.saveBtn.clicked.connect(self.savefig)
+
+	# plotting options -- amp
+	self.ampopt = QtWidgets.QFrame(self.right)
+	self.ampopt.setFrameShape(1)
+	self.ampopt.setFrameShadow(0)
+	self.ampopt.setLineWidth(1)
+	self.right.layout.addWidget(self.ampopt, 1, 1)
+	self.ampopt.layout = QtWidgets.QVBoxLayout(self.ampopt)
+	self.ampopt.btn1 = QtWidgets.QPushButton('Update', self.ampopt)
+	self.ampopt.btn1.clicked.connect(self.update_ampplot)
+	self.ampopt.layout.addWidget(self.ampopt.btn1, alignment=QtCore.Qt.AlignLeft)
+	self.ampopt.logY = QtWidgets.QCheckBox('log-Y', self.ampopt)
+	self.ampopt.logY.setChecked(False)
+	self.ampopt.layout.addWidget(self.ampopt.logY, alignment=QtCore.Qt.AlignLeft)
+	self.ampopt.Yscalelayout = QtWidgets.QGridLayout()
+	self.ampopt.layout.addLayout(self.ampopt.Yscalelayout)
+	self.ampopt.lab1 = QtWidgets.QLabel('Y-range:')
+	self.ampopt.Yscalelayout.addWidget(self.ampopt.lab1, 0, 0)
+	self.ampopt.BGYscale = QtWidgets.QButtonGroup(self.ampopt)
+	self.ampopt.radAuto = QtWidgets.QRadioButton('Auto')
+	self.ampopt.BGYscale.addButton(self.ampopt.radAuto)
+	self.ampopt.BGYscale.setId(self.ampopt.radAuto, 0)
+	self.ampopt.Yscalelayout.addWidget(self.ampopt.radAuto, 1, 0)
+	self.ampopt.radFixed = QtWidgets.QRadioButton('Fixed')
+	self.ampopt.BGYscale.addButton(self.ampopt.radFixed)
+	self.ampopt.BGYscale.setId(self.ampopt.radFixed, 1)
+	self.ampopt.Yscalelayout.addWidget(self.ampopt.radFixed, 2, 0)
+	self.ampopt.radAuto.setChecked(True)
+	self.ampopt.lab2 = QtWidgets.QLabel('min.')
+	self.ampopt.lab3 = QtWidgets.QLabel('max.')
+	self.ampopt.Yscalelayout.addWidget(self.ampopt.lab2, 3, 0, alignment=QtCore.Qt.AlignRight)
+	self.ampopt.Yscalelayout.addWidget(self.ampopt.lab3, 4, 0, alignment=QtCore.Qt.AlignRight)
+	self.ampopt.YminLE = QtWidgets.QLineEdit(self.ampopt)
+	self.ampopt.YmaxLE = QtWidgets.QLineEdit(self.ampopt)
+	self.ampopt.Yscalelayout.addWidget(self.ampopt.YminLE, 3, 1)
+	self.ampopt.Yscalelayout.addWidget(self.ampopt.YmaxLE, 4, 1)
+	
+	self.ampopt.layout.addStretch(1)
+
+	# plotting options -- pha
+	self.phaopt = QtWidgets.QFrame(self.right)
+	self.phaopt.setFrameShape(1)
+	self.phaopt.setFrameShadow(0)
+	self.phaopt.setLineWidth(1)
+	self.right.layout.addWidget(self.phaopt, 2, 1)
+	self.phaopt.layout = QtWidgets.QVBoxLayout(self.phaopt)
+	self.phaopt.btn1 = QtWidgets.QPushButton('Update', self.phaopt)
+	self.phaopt.btn1.clicked.connect(self.update_phaplot)
+	self.phaopt.layout.addWidget(self.phaopt.btn1, alignment=QtCore.Qt.AlignLeft)
+	self.phaopt.Yscalelayout = QtWidgets.QGridLayout()
+	self.phaopt.layout.addLayout(self.phaopt.Yscalelayout)
+	self.phaopt.lab1 = QtWidgets.QLabel('Y-range:')
+	self.phaopt.Yscalelayout.addWidget(self.phaopt.lab1, 0, 0)
+	self.phaopt.BGYscale = QtWidgets.QButtonGroup(self.phaopt)
+	self.phaopt.radAuto = QtWidgets.QRadioButton('Auto')
+	self.phaopt.BGYscale.addButton(self.phaopt.radAuto)
+	self.phaopt.BGYscale.setId(self.phaopt.radAuto, 0)
+	self.phaopt.Yscalelayout.addWidget(self.phaopt.radAuto, 1, 0)
+	self.phaopt.radFixed = QtWidgets.QRadioButton('Fixed')
+	self.phaopt.BGYscale.addButton(self.phaopt.radFixed)
+	self.phaopt.BGYscale.setId(self.phaopt.radFixed, 1)
+	self.phaopt.Yscalelayout.addWidget(self.phaopt.radFixed, 2, 0)
+	self.phaopt.radFixed.setChecked(True)
+	self.phaopt.lab2 = QtWidgets.QLabel('min.')
+	self.phaopt.lab3 = QtWidgets.QLabel('max.')
+	self.phaopt.Yscalelayout.addWidget(self.phaopt.lab2, 3, 0, alignment=QtCore.Qt.AlignRight)
+	self.phaopt.Yscalelayout.addWidget(self.phaopt.lab3, 4, 0, alignment=QtCore.Qt.AlignRight)
+	self.phaopt.YminLE = QtWidgets.QLineEdit(self.phaopt)
+	self.phaopt.YmaxLE = QtWidgets.QLineEdit(self.phaopt)
+	self.phaopt.YminLE.setText('-3.5')
+	self.phaopt.YmaxLE.setText('3.5')
+	self.phaopt.Yscalelayout.addWidget(self.phaopt.YminLE, 3, 1)
+	self.phaopt.Yscalelayout.addWidget(self.phaopt.YmaxLE, 4, 1)
+	
+	self.phaopt.layout.addStretch(1)
 
 	# central
         self.main.setFocus()
@@ -154,6 +267,216 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	tab.layout.addWidget(wip)
 	tab.layout.addStretch(1)
 	
+
+
+    def convertTab(self, tab):
+	# whole tab
+	tab.layout = QtWidgets.QVBoxLayout(tab)
+
+
+	# timestamp file
+	tab.tsBox = QtWidgets.QGroupBox('Timestamp file', tab)
+	tab.layout.addWidget(tab.tsBox)
+
+	tab.tsBox.layout = QtWidgets.QGridLayout(tab.tsBox)
+	btn1 = QtWidgets.QPushButton('Choose file ...', tab.tsBox)
+	btn1.clicked.connect(self.openTfile)
+	tab.tsBox.layout.addWidget(btn1, 0, 0)
+
+	lab1 = QtWidgets.QLabel('-OR- Enter File')
+	tab.tsBox.layout.addWidget(lab1, 0, 1)
+
+	self.tsLE = QtWidgets.QLineEdit(tab.tsBox)
+	self.tsLE.editingFinished.connect(self.getTfile)
+	tab.tsBox.layout.addWidget(self.tsLE, 0, 2)
+
+	lab2 = QtWidgets.QLabel('Num of Antenna:', tab.tsBox)
+	tab.tsBox.layout.addWidget(lab2, 1, 0)
+	self.naLE = QtWidgets.QLineEdit(tab.tsBox)
+	self.naLE.setText(str(self.na))
+	self.naLE.editingFinished.connect(self.update_na)
+	tab.tsBox.layout.addWidget(self.naLE, 1, 1)
+
+	btn2 = QtWidgets.QPushButton('Convert', tab.tsBox)
+	btn2.clicked.connect(self.convert)
+	tab.tsBox.layout.addWidget(btn2, 2, 0)
+
+
+	# empty below
+	tab.layout.addStretch(1)
+
+
+    def update_na(self):
+	try:
+	    na = self.naLE.text()
+	    self.na = na
+	except ValueError:
+	    pass
+
+
+    def openTfile(self):
+	fname = QtWidgets.QFileDialog.getOpenFileName(self, 'Choose File', '.')
+
+	if fname[0]:
+	    rpath = os.path.relpath(fname[0])
+	    self.tsLE.setText(rpath)
+	    self.tsname = rpath
+
+	
+    def getTfile(self):
+	try:
+	    fname = self.tsLE.text()
+	except ValueError:
+	    fname = ''
+	self.tsname = fname
+
+
+    def convert(self):
+	if (os.path.isfile(self.tsname)):
+	    pass
+	else:
+	    print 'error finding timestamp file:', self.tsname
+	    return 1
+
+	rawname = self.tsname.rstrip('.timestamp') + '.raw.oneh5'
+	print 'output to ', rawname
+
+	time, auto, cross = ldcorr(self.tsname, self.na)
+	print 'reading done.'
+
+	wtoneh5(rawname, time, auto, cross)
+	print 'writing done.'
+	
+
+
+    def calTab(self, tab):
+	# whole tab
+	tab.layout = QtWidgets.QVBoxLayout(tab)
+
+
+	# raw data
+	tab.rawBox = QtWidgets.QGroupBox('Source File', tab)
+	tab.layout.addWidget(tab.rawBox)	
+	tab.rawBox.layout = QtWidgets.QVBoxLayout(tab.rawBox)
+
+	tab.RFilelayout = QtWidgets.QHBoxLayout()
+	tab.rawBox.layout.addLayout(tab.RFilelayout)
+	btn1 = QtWidgets.QPushButton('Choose file ...', tab.rawBox)
+	btn1.clicked.connect(self.openRfile)
+	tab.RFilelayout.addWidget(btn1, alignment=QtCore.Qt.AlignLeft)
+	tab.rawBox.lab1 = QtWidgets.QLabel('-Or- Enter File')
+	tab.RFilelayout.addWidget(tab.rawBox.lab1)
+	self.rawLE = QtWidgets.QLineEdit(tab.rawBox)
+	self.rawLE.editingFinished.connect(self.getRfile)
+	#self.rawLE.setText(self.rawname)
+	tab.RFilelayout.addWidget(self.rawLE)
+
+	
+	# cal data
+	tab.calBox = QtWidgets.QGroupBox('Calibrator File', tab)
+	tab.layout.addWidget(tab.calBox)	
+	tab.calBox.layout = QtWidgets.QVBoxLayout(tab.calBox)
+
+	tab.CFilelayout = QtWidgets.QHBoxLayout()
+	tab.calBox.layout.addLayout(tab.CFilelayout)
+	btn3 = QtWidgets.QPushButton('Choose file ...', tab.calBox)
+	btn3.clicked.connect(self.openCfile)
+	tab.CFilelayout.addWidget(btn3, alignment=QtCore.Qt.AlignLeft)
+	tab.calBox.lab1 = QtWidgets.QLabel('-Or- Enter File')
+	tab.CFilelayout.addWidget(tab.calBox.lab1)
+	self.calLE = QtWidgets.QLineEdit(tab.calBox)
+	self.calLE.editingFinished.connect(self.getCfile)
+	#self.calLE.setText(self.calname)
+	tab.CFilelayout.addWidget(self.calLE)
+	tab.calBox.note = QtWidgets.QLabel("Note: enter 'self' in the field above for self-calibration.")
+	tab.calBox.layout.addWidget(tab.calBox.note)
+
+
+	# option and calibrate
+	tab.optBox = QtWidgets.QGroupBox('Options', tab)
+	tab.layout.addWidget(tab.optBox)
+	tab.optBox.layout = QtWidgets.QGridLayout(tab.optBox)
+
+	tab.optBox.lab1 = QtWidgets.QLabel('Bandpass Cal.:')
+	self.CBpcal = QtWidgets.QCheckBox('phase')
+	self.CBgcal = QtWidgets.QCheckBox('gain')
+	self.CBpcal.setChecked(True)
+	tab.optBox.layout.addWidget(tab.optBox.lab1, 0, 0)
+	tab.optBox.layout.addWidget(self.CBpcal, 0, 1)
+	tab.optBox.layout.addWidget(self.CBgcal, 0, 2)
+
+	btn5 = QtWidgets.QPushButton('Calibrate', tab.optBox)
+	btn5.clicked.connect(self.calibrate)
+	tab.optBox.layout.addWidget(btn5, 1, 0)
+
+
+
+	# empty space below
+	tab.layout.addStretch(1)
+
+
+
+    def openRfile(self):
+	fname = QtWidgets.QFileDialog.getOpenFileName(self, 'Choose File', '.')
+
+	if fname[0]:
+	    rpath = os.path.relpath(fname[0])
+	    self.rawLE.setText(rpath)
+	    self.rawname = rpath
+
+
+    def openCfile(self):
+	fname = QtWidgets.QFileDialog.getOpenFileName(self, 'Choose File', '.')
+
+	if fname[0]:
+	    rpath = os.path.relpath(fname[0])
+	    self.calLE.setText(rpath)
+	    self.calname = rpath
+
+
+    def getRfile(self):
+	try:
+	    fname = self.rawLE.text()
+	except ValueError:
+	    fname = ''
+	self.rawname = fname
+
+
+    def getCfile(self):
+	try:
+	    fname = self.calLE.text()
+	except ValueError:
+	    fname = ''
+	self.calname = fname
+
+
+    def calibrate(self):
+	if (os.path.isfile(self.rawname)):
+	    pass
+	else:
+	    print 'error finding raw_file,', self.rawname
+	    return 1
+
+	if (os.path.isfile(self.calname) or self.calname == 'self'):
+	    pass
+	else:
+	    print 'error finding cal_file,', self.calname
+	    return 1
+
+	calexe = '%s/calibrate_oneh5.py' % self.bindir
+	cmd = [calexe, self.rawname, self.calname]
+
+	if (self.CBpcal.isChecked()):
+	    pass		# default is to do pcal
+	else:
+	    cmd.append('-pcal')	# this turns off pcal
+
+	if (self.CBgcal.isChecked()):
+	    cmd.append('-gcal')	# this turns on gcal
+	else:
+	    pass		# default is to not do gcal
+
+	call(cmd)
 
 
 
@@ -172,7 +495,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	self.chlim  = [20, 760]	    # channel range
 	self.tlim   = [0, 0]	    # will update after data is loaded
 	self.anti   = 0		    # plotting anti X antj
-	self.antj   = 0		    
+	self.antj   = 1		    
 
 	self.tbin   = 1		    # default binning
 	self.chbin  = 1
@@ -191,7 +514,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	tab.selectFile = QtWidgets.QWidget(tab.fileBox)
 	tab.fileBox.layout.addWidget(tab.selectFile)
 	tab.selectFile.layout = QtWidgets.QHBoxLayout(tab.selectFile)
-	btn1 = QtWidgets.QPushButton('Open file ...', tab.selectFile)
+	btn1 = QtWidgets.QPushButton('Choose file ...', tab.selectFile)
 	btn1.clicked.connect(self.openfile)
 	tab.selectFile.layout.addWidget(btn1, alignment=QtCore.Qt.AlignLeft)
 	tab.selectFile.lab1 = QtWidgets.QLabel('-Or- Enter File')
@@ -226,12 +549,32 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	tab.actionRow = QtWidgets.QWidget(tab.dataBox)
 	tab.dataBox.layout.addWidget(tab.actionRow)
 	tab.actionRow.layout = QtWidgets.QHBoxLayout(tab.actionRow)
-	btn3 = QtWidgets.QPushButton('Plot vs. Time', tab.dataBox)
-	btn3.clicked.connect(self.plotvstime)
-	tab.actionRow.layout.addWidget(btn3)
-	btn4 = QtWidgets.QPushButton('Plot vs. Chan', tab.dataBox)
-	btn4.clicked.connect(self.plotvschan)
-	tab.actionRow.layout.addWidget(btn4)
+	tab.vsTime = QtWidgets.QFrame(tab.actionRow)
+	tab.vsTime.setFrameShape(1)
+	tab.vsTime.setLineWidth(1)
+	tab.actionRow.layout.addWidget(tab.vsTime)
+	tab.vsTime.layout = QtWidgets.QVBoxLayout(tab.vsTime)
+	tab.vsChan = QtWidgets.QFrame(tab.actionRow)
+	tab.vsChan.setFrameShape(1)
+	tab.vsChan.setLineWidth(1)
+	tab.actionRow.layout.addWidget(tab.vsChan)
+	tab.vsChan.layout = QtWidgets.QVBoxLayout(tab.vsChan)
+	tab.vsTime.lab1 = QtWidgets.QLabel('vs. Time')
+	tab.vsTime.layout.addWidget(tab.vsTime.lab1)
+	tab.vsTime.singleBtn = QtWidgets.QPushButton('Single Trace', tab.dataBox)
+	tab.vsTime.singleBtn.clicked.connect(self.newplotvstime)
+	tab.vsTime.layout.addWidget(tab.vsTime.singleBtn)
+	tab.vsTime.addBtn = QtWidgets.QPushButton('Add Trace', tab.dataBox)
+	tab.vsTime.addBtn.clicked.connect(self.plotvstime)
+	tab.vsTime.layout.addWidget(tab.vsTime.addBtn)
+	tab.vsChan.lab1 = QtWidgets.QLabel('vs. Chan')
+	tab.vsChan.layout.addWidget(tab.vsChan.lab1)
+	tab.vsChan.singleBtn = QtWidgets.QPushButton('Single Trace', tab.dataBox)
+	tab.vsChan.singleBtn.clicked.connect(self.newplotvschan)
+	tab.vsChan.layout.addWidget(tab.vsChan.singleBtn)
+	tab.vsChan.addBtn = QtWidgets.QPushButton('Add Trace', tab.dataBox)
+	tab.vsChan.addBtn.clicked.connect(self.plotvschan)
+	tab.vsChan.layout.addWidget(tab.vsChan.addBtn)
 
 	tab.selectSB = QtWidgets.QWidget(tab.dataBox)
 	tab.dataBox.layout.addWidget(tab.selectSB)
@@ -320,15 +663,15 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	tab.binRow = QtWidgets.QWidget(tab.plotBox)
 	tab.plotBox.layout.addWidget(tab.binRow)
 	tab.binRow.layout = QtWidgets.QHBoxLayout(tab.binRow)
-	tab.binRow.lab1 = QtWidgets.QLabel('Re-bin: ')
+	tab.binRow.lab1 = QtWidgets.QLabel('Binning: ')
 	tab.binRow.layout.addWidget(tab.binRow.lab1)
-	tab.binRow.lab2 = QtWidgets.QLabel('chan-ch')
+	tab.binRow.lab2 = QtWidgets.QLabel('chan_bin')
 	tab.binRow.layout.addWidget(tab.binRow.lab2)
 	self.chbinLE = QtWidgets.QLineEdit(tab.binRow)
 	self.chbinLE.setText('%d' % self.chbin)
 	self.chbinLE.editingFinished.connect(self.verifyBin)
 	tab.binRow.layout.addWidget(self.chbinLE)
-	tab.binRow.lab3 = QtWidgets.QLabel('time-pt')
+	tab.binRow.lab3 = QtWidgets.QLabel('time_bin')
 	tab.binRow.layout.addWidget(tab.binRow.lab3)
 	self.tbinLE = QtWidgets.QLineEdit(tab.binRow)
 	self.tbinLE.setText('%d' % self.tbin)
@@ -344,7 +687,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
 
     def openfile(self):
-	fname = QtWidgets.QFileDialog.getOpenFileName(self, 'Open File', '.')
+	fname = QtWidgets.QFileDialog.getOpenFileName(self, 'Choose File', '.')
 
 	if fname[0]:
 	    rpath = os.path.relpath(fname[0])
@@ -419,14 +762,20 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
 
     def dataRebin(self):
+
 	if (self.verifyANT() == 0):
 	    print 'passed ANT:', self.anti, self.antj
 	    pass
 	else:
 	    return 1	# failed
 
-	self.tlim[0] = float(self.tlimLE[0].text())
-	self.tlim[1] = float(self.tlimLE[1].text())
+	try:
+	    self.tlim[0] = float(self.tlimLE[0].text())
+	    self.tlim[1] = float(self.tlimLE[1].text())
+	except ValueError:
+	    self.statusBar().showMessage('Data not loaded. Abort!', 2000)
+	    print 'data is Not loaded'
+	    return 1
 	#print self.tlim, self.t0[0], self.t0[-1]
 	if (self.tlim[0] >= self.t0[0] and self.tlim[1] <= self.t0[-1]+0.001 and self.tlim[0] < self.tlim[1]):
 	    #print 'passed tlim:', self.tlim
@@ -444,6 +793,8 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	    self.statusBar().showMessage('Chan range error. Abort!', 2000)
 	    return 1	# failed
 
+
+	self.selectBL = '%d-%d' % (self.anti, self.antj)
 
 	if (self.anti == self.antj):	# auto
 	    raw = self.auto[self.sb, self.anti]
@@ -493,6 +844,49 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	return 0	# success
 
 
+    def update_ampplot(self):
+	logY = self.ampopt.logY.isChecked()
+	if (logY):
+	    self.plot.update_info('amp', logY='on')
+	else:
+	    self.plot.update_info('amp', logY='off')
+
+	yScale = self.ampopt.BGYscale.checkedId()
+	if (yScale == 0):   # auto
+	    self.plot.update_info('amp', yLim=[])
+	elif (yScale == 1): # fixed
+	    try:
+		ymin = float(self.ampopt.YminLE.text())
+		ymax = float(self.ampopt.YmaxLE.text())
+		self.plot.update_info('amp', yLim=[ymin, ymax])
+	    except ValueError:
+		print 'fixed range; Y-range not set?'
+		self.statusBar().showMessage('fixed range; Y-range not set?', 2000)
+		return None
+
+
+    def update_phaplot(self):
+	yScale = self.phaopt.BGYscale.checkedId()
+	if (yScale == 0):   # auto
+	    self.plot.update_info('pha', yLim=[])
+	elif (yScale == 1): # fixed
+	    try:
+		ymin = float(self.phaopt.YminLE.text())
+		ymax = float(self.phaopt.YmaxLE.text())
+		self.plot.update_info('pha', yLim=[ymin, ymax])
+	    except ValueError:
+		print 'fixed range; Y-range not set?'
+		self.statusBar().showMessage('fixed range; Y-range not set?', 2000)
+		return None
+
+
+    def newplotvstime(self):
+	self.plot.clear()
+	self.plotvstime()
+	self.plot.update_info('amp', title=self.fname, xlabel='Time (sec)', ylabel='Amplitude')
+	self.plot.update_info('pha', title=self.fname, xlabel='Time (sec)', ylabel='Phase (rad)')
+
+
     def plotvstime(self):
 	if (self.dataRebin() == 0):
 	    pass
@@ -504,10 +898,17 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	a = np.abs(self.plotData.mean(axis=0))
 	p = np.angle(self.plotData.mean(axis=0))
 
-	self.ampplot.update_figure(x, a)
-	self.phaplot.update_figure(x, p)
+	label = 'BL%s, SB%d' % (self.selectBL, self.sb)
+	self.plot.add_trace('amp', x, a, label=label)
+	self.plot.add_trace('pha', x, p, label=label)
 
 
+
+    def newplotvschan(self):
+	self.plot.clear()
+	self.plotvschan()
+	self.plot.update_info('amp', title=self.fname, xlabel='Channel (ch)', ylabel='Amplitude')
+	self.plot.update_info('pha', title=self.fname, xlabel='Channel (ch)', ylabel='Phase (rad)')
 
 
     def plotvschan(self):
@@ -521,9 +922,17 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	a = np.abs(self.plotData.mean(axis=1))
 	p = np.angle(self.plotData.mean(axis=1))
 
-	self.ampplot.update_figure(x, a)
-	self.phaplot.update_figure(x, p)
+	label = 'BL%s, SB%d' % (self.selectBL, self.sb)
+	self.plot.add_trace('amp', x, a, label=label)
+	self.plot.add_trace('pha', x, p, label=label)
 
+
+    def savefig(self):
+	fname = QtWidgets.QFileDialog.getSaveFileName(self, 'Save Filename', '.')
+
+	if fname[0]:
+	    rpath = os.path.relpath(fname[0])
+	    self.plot.savefig(rpath)
 
 
 
@@ -547,7 +956,9 @@ if (__name__ == '__main__'):
 
     qApp = QtWidgets.QApplication(inp)
 
-    progname = os.path.basename(inp.pop(0))
+    pg = inp.pop(0)
+    progname = os.path.basename(pg)
+    bindir   = os.path.dirname(pg)
 
     fname = ''
     while (inp):
@@ -555,7 +966,7 @@ if (__name__ == '__main__'):
 	if os.path.isfile(f):
 	    fname = f
 
-    aw = ApplicationWindow(fname=fname)
+    aw = ApplicationWindow(fname=fname, bindir=bindir)
     aw.setWindowTitle("%s" % progname)
     aw.show()
 
