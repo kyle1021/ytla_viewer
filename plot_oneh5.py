@@ -9,9 +9,9 @@ from drawpdf import *
 #-- defaults --
 inp	= sys.argv[0:]
 pg	= inp.pop(0)
-na	= 4
+na	= 7
 nb	= na * (na-1) / 2
-chlim	= [5, 750]		# channel range to avg
+chlim	= [20, 760]		# channel range to avg
 tlim	= []			# time    range to avg AND plot (sec)
 ys	= 'common'		# amp plot mode
 				# 'common' = min/max range of all sub-plots

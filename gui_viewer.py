@@ -33,7 +33,7 @@ from loadh5 import *
 class MyMplCanvas(FigureCanvas):
     """Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
 
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
+    def __init__(self, parent=None, width=7, height=5, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.ampax = self.fig.add_subplot(211)
         self.phaax = self.fig.add_subplot(212)
@@ -309,7 +309,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
     def update_na(self):
 	try:
 	    na = self.naLE.text()
-	    self.na = na
+	    self.na = int(na)
 	except ValueError:
 	    pass
 
@@ -350,6 +350,11 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
 
     def calTab(self, tab):
+	# defaults
+	self.calcr = self.chlim
+	self.caltr = [0., 0.]
+
+
 	# whole tab
 	tab.layout = QtWidgets.QVBoxLayout(tab)
 
@@ -390,6 +395,35 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	tab.CFilelayout.addWidget(self.calLE)
 	tab.calBox.note = QtWidgets.QLabel("Note: enter 'self' in the field above for self-calibration.")
 	tab.calBox.layout.addWidget(tab.calBox.note)
+	#caltr
+	self.CBcaltr = QtWidgets.QCheckBox('limit calibrator time range:', tab.calBox)
+	self.CBcaltr.setChecked(False)
+	tab.calBox.layout.addWidget(self.CBcaltr)
+	tab.TRlayout = QtWidgets.QHBoxLayout()
+	tab.calBox.layout.addLayout(tab.TRlayout)
+	labtr = QtWidgets.QLabel('[tmin, tmax]:', tab.calBox)
+	tab.TRlayout.addWidget(labtr)
+	self.caltrLE = []
+	self.caltrLE.append(QtWidgets.QLineEdit(tab.calBox))
+	self.caltrLE.append(QtWidgets.QLineEdit(tab.calBox))
+	tab.TRlayout.addWidget(self.caltrLE[0])
+	tab.TRlayout.addWidget(self.caltrLE[1])
+	#calcr
+	self.CBcalcr = QtWidgets.QCheckBox('limit calibrator chan range:', tab.calBox)
+	self.CBcalcr.setChecked(True)
+	tab.calBox.layout.addWidget(self.CBcalcr)
+	tab.CRlayout = QtWidgets.QHBoxLayout()
+	tab.calBox.layout.addLayout(tab.CRlayout)
+	labcr = QtWidgets.QLabel('[cmin, cmax]:', tab.calBox)
+	tab.CRlayout.addWidget(labcr)
+	self.calcrLE = []
+	self.calcrLE.append(QtWidgets.QLineEdit(tab.calBox))
+	self.calcrLE.append(QtWidgets.QLineEdit(tab.calBox))
+	self.calcrLE[0].setText(str(self.calcr[0]))
+	self.calcrLE[1].setText(str(self.calcr[1]))
+	tab.CRlayout.addWidget(self.calcrLE[0])
+	tab.CRlayout.addWidget(self.calcrLE[1])
+
 
 
 	# option and calibrate
@@ -401,6 +435,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	self.CBpcal = QtWidgets.QCheckBox('phase')
 	self.CBgcal = QtWidgets.QCheckBox('gain')
 	self.CBpcal.setChecked(True)
+	self.CBgcal.setChecked(True)
 	tab.optBox.layout.addWidget(tab.optBox.lab1, 0, 0)
 	tab.optBox.layout.addWidget(self.CBpcal, 0, 1)
 	tab.optBox.layout.addWidget(self.CBgcal, 0, 2)
@@ -467,14 +502,37 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	cmd = [calexe, self.rawname, self.calname]
 
 	if (self.CBpcal.isChecked()):
-	    pass		# default is to do pcal
+	    cmd.append('-pcal')		# this turns on pcal
 	else:
-	    cmd.append('-pcal')	# this turns off pcal
+	    cmd.append('-nopcal')	# this turns off pcal
 
 	if (self.CBgcal.isChecked()):
-	    cmd.append('-gcal')	# this turns on gcal
+	    cmd.append('-gcal')		# this turns on gcal
 	else:
-	    pass		# default is to not do gcal
+	    cmd.append('-nogcal')	# this turns off gcal
+
+	if (self.CBcaltr.isChecked()):
+	    try:
+		t1 = float(self.caltrLE[0].text())
+		t2 = float(self.caltrLE[1].text())
+		self.caltr = [t1, t2]
+	    except:
+		print 'error getting time range!'
+		print 'fall back to use all data.'
+		self.CBcaltr.setChecked(False)
+	    cmd.extend(['-caltr', '%d' % self.caltr[0], '%d' % self.caltr[1]])
+	    
+	if (self.CBcalcr.isChecked()):
+	    try:
+		c1 = int(self.calcrLE[0].text())
+		c2 = int(self.calcrLE[1].text())
+		self.calcr = [c1, c2]
+	    except:
+		print 'error getting channel range!'
+		print 'fall back to use default channels.'
+		self.CBcalcr.setChecked(False)
+	    cmd.extend(['-calcr', '%d' % self.calcr[0], '%d' % self.calcr[1]])
+	    
 
 	call(cmd)
 
@@ -485,8 +543,8 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
 	# default values
 	self.nsb    = 2		    # will update after data is loaded
-	self.na	    = 4		    # will update after data is loaded
-	self.ma	    = 4		    # max number of antennas (for layout)
+	self.na	    = 7		    # will update after data is loaded
+	self.ma	    = 7		    # max number of antennas (for layout)
 	self.nch    = 1024
 	self.npt    = 0		    # data length (points), will be updated
 	self.bw	    = 1.6	    # bandwidth, GHz
@@ -534,10 +592,14 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	self.fileLab = QtWidgets.QLabel('', tab.dataProp)
 	tab.dataProp.lab2 = QtWidgets.QLabel('Nsb, Na, Nch, Npt = ', tab.dataProp)
 	self.shapeLab = QtWidgets.QLabel('', tab.dataProp)
+	tab.dataProp.lab3 = QtWidgets.QLabel('Time range (sec):', tab.dataProp)
+	self.tlimLab = QtWidgets.QLabel('', tab.dataProp)
 	tab.dataProp.layout.addWidget(tab.dataProp.lab1, 0, 0)
 	tab.dataProp.layout.addWidget(self.fileLab, 0, 1)
 	tab.dataProp.layout.addWidget(tab.dataProp.lab2, 1, 0)
 	tab.dataProp.layout.addWidget(self.shapeLab, 1, 1)
+	tab.dataProp.layout.addWidget(tab.dataProp.lab3, 2, 0)
+	tab.dataProp.layout.addWidget(self.tlimLab, 2, 1)
 
 
 
@@ -717,6 +779,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 	    self.tlim = [self.t0[0], self.t0[-1]]
 	    self.tlimLE[0].setText('%.3f' % self.tlim[0])
 	    self.tlimLE[1].setText('%.3f' % self.tlim[1])
+	    self.tlimLab.setText('[%.3f, %.3f]' % tuple(self.tlim))
 	    self.bl = np.zeros((self.na-1, self.na), dtype=int)	# anti: 0, na-2; antj = 1, na-1
 	    b = 0
 	    for i in range(self.na-1):
