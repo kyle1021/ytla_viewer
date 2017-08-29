@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 import h5py
-import os.path
+import sys, os.path
 from datetime import datetime
 
 nsb = 2		# fixed num. of sidebands ('lsb', 'usb')
@@ -41,35 +41,31 @@ def ldcorr(ftime, na):
 	cross = np.zeros((nsb, nb, nch, ndata), dtype=complex)
 	for s in range(nsb):
 		b = -1
+
+		xtype = 'auto'
+		aname = dname + '/' + fbase + '.%s.%s.h5' % (w[s], xtype)
+		print aname, '--> ', os.path.isfile(aname)
+		ha = h5py.File(aname, 'r')
+		xtype = 'cross'
+		cname = dname + '/' + fbase + '.%s.%s.h5' % (w[s], xtype)
+		print cname, '--> ', os.path.isfile(cname)
+		hc = h5py.File(cname, 'r')
+
 		for i in range(na):
-			bname = '%d%d' % (i, i)
-			xtype = 'auto'
-			xname = dname + '/' + fbase + '.%s.%s.%s.h5' % (bname, w[s], xtype)
-			print xname, '--> ', os.path.isfile(xname)
-			try:
-				hf = h5py.File(xname, 'r')
-				arr = np.array(hf.get('fullData/real'))
-				auto[s, i] = arr
-				hf.close()
-			except IOError:
-				pass
+			bname = 'auto%d%d' % (i, i)
+			arr = np.array(ha.get(bname))
+			auto[s, i] = arr
 				
 			for j in range(i+1, na):
 				b += 1
-				bname = '%d%d' % (i, j)
-				xtype = 'cross'
-				xname = dname + '/' + fbase + '.%s.%s.%s.h5' % (bname, w[s], xtype)
-				print xname, '--> ', os.path.isfile(xname)
-				try:
-					hf = h5py.File(xname, 'r')
-					arr = np.array(hf.get('fullData/real'))
-					cross[s, b].real = arr
-					arr = np.array(hf.get('fullData/imag'))
-					cross[s, b].imag = arr
-					hf.close()
-				except IOError:
-					pass
+				bname = '/cross%d%d' % (i, j)
+				arr = np.array(hc.get('%s/real' % bname))
+				cross[s, b].real = arr
+				arr = np.array(hc.get('%s/imag' % bname))
+				cross[s, b].imag = arr
 
+		ha.close()
+		hc.close()
 
 	print '... ', datetime.now().isoformat()
 	return time, auto, cross
@@ -171,5 +167,34 @@ if (False):
 	print time.shape, auto.shape, visr.shape, visi.shape
 	call('date')
 
+
+if (__name__ == '__main__'):
+
+
+    inp = sys.argv[0:]
+    pg  = inp.pop(0)
+    usage = '''
+    program needs two arguments.
+
+    %s <timestamp_file> <na>
+
+    ''' % pg
+
+    if (len(inp) >= 2):
+	fname = inp.pop(0)
+	na = int(inp.pop(0))
+	if (not os.path.isfile(fname)):
+	    print 'error finding file: ', fname
+	else:
+	    if (fname.endswith('.timestamp')):
+		fout = fname.rstrip('.timestamp') + '.raw.oneh5'
+		print 'reading data ...'
+		time, auto, cross = ldcorr(fname, na)
+		print 'writing data ...'
+		wtoneh5(fout, time, auto, cross)
+	    else:
+		print 'please specify a timestamp file.'
+    else:
+	print usage	
 
 

@@ -9,15 +9,16 @@ from loadh5 import *
 #-- defaults --
 inp 	= sys.argv[0:]
 pg  	= inp.pop(0)
-na  	= 4
+na  	= 7
 nb  	= na * (na-1) / 2
-chmin	= 5
-chmax	= 750
+chmin	= 20
+chmax	= 760
 loadcal	= True
 # default to phase-cal only for now
 phasecal = True
 gaincal  = False
 caltype  = '.'
+caltr	 = 'all'
 
 
 #-- usage --
@@ -36,6 +37,9 @@ syntax %s <raw_oneh5_file> <cal_oneh5_file> [options]
 	-gcal		# toggle (gain-cal  = %r)
 	-fcal		# NOT implemented yet
 
+	-caltr t1 t2	# limit the time range of calibrator data to [t1:t2]
+			# bandpass is averaged within this time range
+
 ''' % (pg, phasecal, gaincal)
 
 if (len(inp) < 2):
@@ -52,6 +56,14 @@ while(inp):
 		phasecal = not(phasecal)
 	elif (arg == '-gcal'):
 		gaincal  = not(gaincal)
+	elif (arg == '-caltr'):
+		try:
+		    t1 = float(inp.pop(0))
+		    t2 = float(inp.pop(0))
+		    if (t1 < t2):
+			caltr = 'user'
+		except ValueError:
+		    print 'cal time range error.'
 	else:
 		rawh5 = arg
 		calh5 = inp.pop(0)
@@ -115,7 +127,22 @@ if (loadcal):
 	# with nsb = 2, nch = 1024 defined in loadh5.py
 
 	## time avg cal data to get a single phassband (not normalized yet)
-	avgcal = calcross.mean(axis = 3)
+	if (caltr == 'all'):
+	    tw = np.ones(caltime.size, dtype='bool')
+	elif (caltr == 'user'):
+	    run = True
+	    t = caltime - caltime[0]
+	    if (t1 > t[-1]):
+		run = False
+	    if (t2 < t[0]):
+		run = False
+	    if (run):
+		tw = np.logical_and(t>=t1, t<=t2)
+	    else:
+		print 'warning: invalid cal time range.'
+		tw = np.ones(caltime.size, dtype='bool')
+	    
+	avgcal = calcross[:,:,:,tw].mean(axis = 3)
 	## define normalization factor in the channel range specified
 	norm = np.abs(avgcal[:,:,chmin:chmax].mean(axis=2))
 	## the (relative) passband

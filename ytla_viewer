@@ -1,0 +1,6 @@
+#!/bin/bash
+YTLABIN="$HOME/kylin/bin"
+
+source activate py27
+$YTLABIN/gui_viewer.py
+

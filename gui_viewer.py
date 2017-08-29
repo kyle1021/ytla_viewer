@@ -33,7 +33,7 @@ from loadh5 import *
 class MyMplCanvas(FigureCanvas):
     """Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
 
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
+    def __init__(self, parent=None, width=7, height=5, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.ampax = self.fig.add_subplot(211)
         self.phaax = self.fig.add_subplot(212)
@@ -309,7 +309,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
     def update_na(self):
 	try:
 	    na = self.naLE.text()
-	    self.na = na
+	    self.na = int(na)
 	except ValueError:
 	    pass
 
@@ -485,8 +485,8 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
 	# default values
 	self.nsb    = 2		    # will update after data is loaded
-	self.na	    = 4		    # will update after data is loaded
-	self.ma	    = 4		    # max number of antennas (for layout)
+	self.na	    = 7		    # will update after data is loaded
+	self.ma	    = 7		    # max number of antennas (for layout)
 	self.nch    = 1024
 	self.npt    = 0		    # data length (points), will be updated
 	self.bw	    = 1.6	    # bandwidth, GHz
