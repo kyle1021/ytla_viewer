@@ -16,9 +16,10 @@ chmax	= 760
 loadcal	= True
 # default to phase-cal only for now
 phasecal = True
-gaincal  = False
+gaincal  = True
 caltype  = '.'
 caltr	 = 'all'
+calcr	 = 'default'
 
 
 #-- usage --
@@ -33,12 +34,14 @@ syntax %s <raw_oneh5_file> <cal_oneh5_file> [options]
 	output raw_vis.amp with no calibration
 
 	options are:
-	-pcal		# toggle (phase-cal = %r)
-	-gcal		# toggle (gain-cal  = %r)
+	-(no)pcal	# toggle (phase-cal = %r)
+	-(no)gcal	# toggle (gain-cal  = %r)
 	-fcal		# NOT implemented yet
 
 	-caltr t1 t2	# limit the time range of calibrator data to [t1:t2]
 			# bandpass is averaged within this time range
+
+	-calcr c1 c2	# normalize the bandpass between [c1:c2]
 
 ''' % (pg, phasecal, gaincal)
 
@@ -53,9 +56,13 @@ if (len(inp) < 2):
 while(inp):
 	arg = inp.pop(0)
 	if (arg == '-pcal'):
-		phasecal = not(phasecal)
+		phasecal = True
+	elif (arg == '-nopcal'):
+		phasecal = False
 	elif (arg == '-gcal'):
-		gaincal  = not(gaincal)
+		gaincal  = True
+	elif (arg == '-nogcal'):
+		gaincal  = False
 	elif (arg == '-caltr'):
 		try:
 		    t1 = float(inp.pop(0))
@@ -64,6 +71,17 @@ while(inp):
 			caltr = 'user'
 		except ValueError:
 		    print 'cal time range error.'
+	elif (arg == '-calcr'):
+		try:
+		    c1 = int(inp.pop(0))
+		    c2 = int(inp.pop(0))
+		    if (c1 < c2):
+			calcr = 'user'
+			chmin = c1
+			chmax = c2
+		except ValueError:
+		    print 'cal channel range error.'
+		    print 'fall back to default range'
 	else:
 		rawh5 = arg
 		calh5 = inp.pop(0)
@@ -139,7 +157,7 @@ if (loadcal):
 	    if (run):
 		tw = np.logical_and(t>=t1, t<=t2)
 	    else:
-		print 'warning: invalid cal time range.'
+		print 'warning: invalid cal time range. use all range.'
 		tw = np.ones(caltime.size, dtype='bool')
 	    
 	avgcal = calcross[:,:,:,tw].mean(axis = 3)
