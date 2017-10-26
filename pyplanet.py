@@ -83,13 +83,13 @@ def mloplanet(body, time, epoch):
 ##  for Jupiter, Saturn, Mars, Uranus, Neptune
 ##  W-band brightness temperature from WMAP-7 (Weiland+2011) are used
 Tdisc = {
-'mercury' : 500,
-'venus'   : 367,
-'mars'    : 195,    # was 207
-'jupiter' : 173.5,  # was 172
-'saturn'  : 146,    # was 149
-'uranus'  : 120,    # was 136
-'neptune' : 142,    # was 127
+'mercury' : 500,    
+'venus'   : 340,    # casa fix, was 367	    # n.a.
+'mars'    : 195,    # casa fix, about same, # was 207
+'jupiter' : 151,    # casa fix, was 173.5,  # was 172
+'saturn'  : 146,    # no casa fix yet,      # was 149
+'uranus'  : 130,    # casa fix, was 120,    # was 136
+'neptune' : 120,    # casa fix, was 142,    # was 127
 'pluto'   : 100,
 'moon'	  : 150,	# an arbitrary number
 'sun'	  : 6000	# an arbitrary number
