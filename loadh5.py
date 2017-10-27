@@ -9,66 +9,79 @@ nch = 1024	# fixed num. of channels
 
 
 
-def ldcorr(ftime, na):
-	nb = na * (na-1) / 2
+def ldcorr(fname, na):
+    nb = na * (na-1) / 2
 
-	if (os.path.isfile(ftime)):
-		pass
-	else:
-		print 'ldcorr: Error finding <timestamp_file> %s' % ftime
-		return None
+    if (fname.endswith('.')):
+	fname.rstrip('.')
+    elif (fname.endswith('.timestamp')):
+	fname.rstrip('.timestamp')
 
-	dname = os.path.dirname(ftime)
-	if (dname == ''):
-		dname = '.'
-	fname = os.path.basename(ftime)
-	if (fname.endswith('.timestamp')):
-		fbase = fname.rstrip('.timestamp')
-	else:
-		fbase = fname
-		print 'Warning: non-standard <timestamp> filename detected.'
+    ftime = fname + '.timestamp'
+
+    if (os.path.isfile(ftime)):
+	print 'use existing .timestamp file'
+    else:
+	print 'no existing .timestamp file'
+	print 'will use ad hoc time info (1 sec/pt)'
+
+    dname = os.path.dirname(fname)
+    if (dname == ''):
+	dname = '.'
+    fbase = fname
 
 
-	print '... ', datetime.now().isoformat()
+    print '... ', datetime.now().isoformat()
 
-	#-- load data --
+
+    #-- determine data length --
+    aname = dname + '/' + fbase + '.%s.%s.h5' % ('lsb', 'auto')
+    ha = h5py.File(aname, 'r')
+    bname = 'auto%d%d' % (0, 0)
+    arr = np.array(ha.get(bname))
+    (nch, ndata) = arr.shape
+    ha.close()
+
+    #-- load data --
+    if (os.path.isfile(ftime)):
 	time = np.loadtxt(ftime)
-	ndata = len(time)
-	
+    else:
+	time = np.arange(ndata)
+    
 
-	w = ['lsb', 'usb']
-	auto  = np.zeros((nsb, na, nch, ndata))
-	cross = np.zeros((nsb, nb, nch, ndata), dtype=complex)
-	for s in range(nsb):
-		b = -1
+    w = ['lsb', 'usb']
+    auto  = np.zeros((nsb, na, nch, ndata))
+    cross = np.zeros((nsb, nb, nch, ndata), dtype=complex)
+    for s in range(nsb):
+	b = -1
 
-		xtype = 'auto'
-		aname = dname + '/' + fbase + '.%s.%s.h5' % (w[s], xtype)
-		print aname, '--> ', os.path.isfile(aname)
-		ha = h5py.File(aname, 'r')
-		xtype = 'cross'
-		cname = dname + '/' + fbase + '.%s.%s.h5' % (w[s], xtype)
-		print cname, '--> ', os.path.isfile(cname)
-		hc = h5py.File(cname, 'r')
+	xtype = 'auto'
+	aname = dname + '/' + fbase + '.%s.%s.h5' % (w[s], xtype)
+	print aname, '--> ', os.path.isfile(aname)
+	ha = h5py.File(aname, 'r')
+	xtype = 'cross'
+	cname = dname + '/' + fbase + '.%s.%s.h5' % (w[s], xtype)
+	print cname, '--> ', os.path.isfile(cname)
+	hc = h5py.File(cname, 'r')
 
-		for i in range(na):
-			bname = 'auto%d%d' % (i, i)
-			arr = np.array(ha.get(bname))
-			auto[s, i] = arr
-				
-			for j in range(i+1, na):
-				b += 1
-				bname = '/cross%d%d' % (i, j)
-				arr = np.array(hc.get('%s/real' % bname))
-				cross[s, b].real = arr
-				arr = np.array(hc.get('%s/imag' % bname))
-				cross[s, b].imag = arr
+	for i in range(na):
+	    bname = 'auto%d%d' % (i, i)
+	    arr = np.array(ha.get(bname))
+	    auto[s, i] = arr
+		    
+	    for j in range(i+1, na):
+		b += 1
+		bname = '/cross%d%d' % (i, j)
+		arr = np.array(hc.get('%s/real' % bname))
+		cross[s, b].real = arr
+		arr = np.array(hc.get('%s/imag' % bname))
+		cross[s, b].imag = arr
 
-		ha.close()
-		hc.close()
+	ha.close()
+	hc.close()
 
-	print '... ', datetime.now().isoformat()
-	return time, auto, cross
+    print '... ', datetime.now().isoformat()
+    return time, auto, cross
 
 
 def wtoneh5(h5name, time, auto, cross):
@@ -138,6 +151,7 @@ def adoneh5(h5name, darray, dname):
 
 def newraw(rawh5, na):
 	# when rawh5 (i.e. .raw.oneh5) does not exist, create a new one from .timestamp file
+	# update: can create a new one from basename (without .timestamp)
 
 	if (rawh5.endswith('.raw.oneh5')):
 		base = rawh5.rstrip('.raw.oneh5')
@@ -145,14 +159,7 @@ def newraw(rawh5, na):
 		print 'expecting rawh5 file ends with ".raw.oneh5"'
 		return None
 
-	rawts = base + '.timestamp'
-
-	if (os.path.isfile(rawts)):
-		print 'reading from %s' % rawts
-		(time, auto, cross) = ldcorr(rawts, na)
-	else:
-		print 'could not find timestamp file %s' % rawts
-		return None
+	(time, auto, cross) = ldcorr(base, na)
 
 	print 'output to %s' % rawh5
 	wtoneh5(rawh5, time, auto, cross)
@@ -176,24 +183,26 @@ if (__name__ == '__main__'):
     usage = '''
     program needs two arguments.
 
-    %s <timestamp_file> <na>
+    %s <file_base> <na>
+
+	<file_base> = something like './data/2017_Oct_26_03_35_27.ytla'
+	if the .h5 files are in the current directory, the path can be omitted
 
     ''' % pg
 
     if (len(inp) >= 2):
 	fname = inp.pop(0)
 	na = int(inp.pop(0))
-	if (not os.path.isfile(fname)):
-	    print 'error finding file: ', fname
-	else:
-	    if (fname.endswith('.timestamp')):
-		fout = fname.rstrip('.timestamp') + '.raw.oneh5'
-		print 'reading data ...'
-		time, auto, cross = ldcorr(fname, na)
-		print 'writing data ...'
-		wtoneh5(fout, time, auto, cross)
-	    else:
-		print 'please specify a timestamp file.'
+
+	if (fname.endswith('.timestamp')):
+	    fname.rstrip('.timestamp')
+
+	fout = fname + '.raw.oneh5'
+	print 'reading data ...'
+	time, auto, cross = ldcorr(fname, na)
+	print 'writing data ...'
+	wtoneh5(fout, time, auto, cross)
+
     else:
 	print usage	
 
