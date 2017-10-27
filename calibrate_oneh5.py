@@ -4,11 +4,14 @@ import sys
 import os.path
 from subprocess import call
 from loadh5 import *
+from scipy import signal
 
 
 #-- defaults --
 inp 	= sys.argv[0:]
 pg  	= inp.pop(0)
+nch	= 1024
+nsb	= 2
 na  	= 7
 nb  	= na * (na-1) / 2
 chmin	= 20
@@ -20,6 +23,8 @@ gaincal  = True
 caltype  = '.'
 caltr	 = 'all'
 calcr	 = 'default'
+gsigma	 = 0.		# default no gaussian spectral filtering 
+flux_jy	 = 0.		# default no flux cal.
 
 
 #-- usage --
@@ -36,14 +41,17 @@ syntax %s <raw_oneh5_file> <cal_oneh5_file> [options]
 	options are:
 	-(no)pcal	# toggle (phase-cal = %r)
 	-(no)gcal	# toggle (gain-cal  = %r)
-	-fcal		# NOT implemented yet
+	-fcal flux_jy	# normalize to flux in Jy
 
 	-caltr t1 t2	# limit the time range of calibrator data to [t1:t2]
 			# bandpass is averaged within this time range
 
 	-calcr c1 c2	# normalize the bandpass between [c1:c2]
 
-''' % (pg, phasecal, gaincal)
+	-filter sigma	# sigma for Gaussian spectral filtering (%d channels)
+
+
+''' % (pg, phasecal, gaincal, gsigma)
 
 if (len(inp) < 2):
 	print usage
@@ -63,6 +71,11 @@ while(inp):
 		gaincal  = True
 	elif (arg == '-nogcal'):
 		gaincal  = False
+	elif (arg == '-fcal'):
+		try:
+		    flux_jy = float(inp.pop(0))
+		except ValueError:
+		    print 'error getting flux, ignoring flux cal.'
 	elif (arg == '-caltr'):
 		try:
 		    t1 = float(inp.pop(0))
@@ -82,6 +95,13 @@ while(inp):
 		except ValueError:
 		    print 'cal channel range error.'
 		    print 'fall back to default range'
+	elif (arg == '-filter'):
+		try:
+		    gsigma = float(inp.pop(0))
+		except ValueError:
+		    print 'invalid sigma value for Gaussian spectral filter.'
+		    print 'ignore filtering'
+		    gsigma = 0.
 	else:
 		rawh5 = arg
 		calh5 = inp.pop(0)
@@ -140,7 +160,8 @@ if (loadcal):
 		(caltime, calauto, calcross) = (rawtime, rawauto, rawcross)
 	else:
 		(caltime, calauto, calcross) = ldoneh5(calh5)
-	ncal = len(caltime)
+	#ncal = len(caltime)
+	(nsb, nb, nch, ncal) = calcross.shape
 	# calcross has shape of (nsb, nb, nch, ncal)
 	# with nsb = 2, nch = 1024 defined in loadh5.py
 
@@ -161,8 +182,20 @@ if (loadcal):
 		tw = np.ones(caltime.size, dtype='bool')
 	    
 	avgcal = calcross[:,:,:,tw].mean(axis = 3)
+
+	## perform spectral smoothing if a Gaussian sigma is provided
+	if (gsigma > 0.):
+	    print 'smoothing...'
+	    glen = 6. * gsigma
+	    win = signal.gaussian(glen, gsigma)
+	    win /= win.sum()
+	    for s in range(nsb):
+		for b in range(nb):
+		    avgcal[s,b] = signal.convolve(avgcal[s,b], win, 'same')
+
 	## define normalization factor in the channel range specified
 	norm = np.abs(avgcal[:,:,chmin:chmax].mean(axis=2))
+
 	## the (relative) passband
 	for i in range(nch):
 		avgcal[:,:,i] = avgcal[:,:,i] / norm[:,:]
@@ -178,6 +211,12 @@ else:
 	avgcal = np.ones((nsb, nb, nch), dtype=complex)
 	norm   = np.ones((nsb, nb))
 
+
+## flux cal
+if (flux_jy > 0.):
+    for i in range(nch):
+	avgcal[:,:,i] = avgcal[:,:,i] * norm[:,:] / flux_jy
+    norm = np.ones_like(norm) * flux_jy
 
 
 #-- passband cal --
