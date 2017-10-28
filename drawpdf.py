@@ -22,7 +22,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 
 
 	# the defaults
-	valid_op = ['tlim', 'chlim', 'cylim', 'tylim', 'ys', 'logy', 'pylim', 'figsize']
+	valid_op = ['tlim', 'chlim', 'cylim', 'tylim', 'ys', 'logy', 'pylim', 'figsize', 'gs']
 	for k in kwargs:
 		if (not(k in valid_op)):
 			print 'error: option %s is not defined.' % k 
@@ -39,6 +39,8 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 	pylim	= kwargs.get('pylim', [-3.5, 3.5])		# plot range of phase
 	figinch = kwargs.get('figsize', (10, 7.5))		# fig size in (x, y) inches
 								# (dpi = 100?)
+	gs	= kwargs.get('gs', 0.)				# gain slope to multiply (in dB across ~1000ch)
+
 	if (opts['tlim']):
 		print '... tset = True'
 		tset = True
@@ -77,6 +79,15 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 	auto  = auto[:,:,:,tw]
 	cross = cross[:,:,:,tw]
 
+
+	## apply gain slope correction
+	if (gs != 0.):
+	    gcal = np.ones((1,1,nch,1))
+	    gcal[0,0,:,0] = 10**(ch * gs/10./float(nch))
+	    cross *= gcal
+	    
+
+
 	## averaging
 	auto_ta  = auto.mean(axis=3)
 	cross_ta = cross.mean(axis=3)
@@ -113,6 +124,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 	print 'plotting auto channel plots'
 	title = fout + ' (auto, amp-chan)'
 	for s in range(nsb):
+	#for s in range(1,2):
 
 		f1 = plt.figure(1, figsize=figinch)	# for png backends, dpi is fixed at 100?
 		for a in range(na):
@@ -136,6 +148,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 	print 'plotting auto time plots'
 	title = fout + ' (auto, amp-time)'
 	for s in range(nsb):
+	#for s in range(1,2):
 
 		f1 = plt.figure(1, figsize=figinch)	# for png backends, dpi is fixed at 100?
 		for a in range(na):
@@ -163,6 +176,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 
 	title = fout + ' (cross, amp-channel)'
 	for s in range(nsb):
+	#for s in range(1,2):
 
 		f1 = plt.figure(1, figsize=figinch)	# for png backends, dpi is fixed at 100?
 		b = -1
@@ -175,7 +189,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 				
 				p1 = plt.subplot(m, n, sub)
 
-				plt.plot(ch, np.abs(cross_ta[s, b]), ',', label=sb[s])
+				plt.plot(ch, np.abs(cross_ta[s, b]), '-', label=sb[s])
 				plt.title('Baseline ' + str(i) + str(j))
 				plt.xlabel('channel')
 				plt.ylabel('<vis.amp>_tavg')
@@ -192,6 +206,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 
 	title = fout + ' (cross, pha-channel)'
 	for s in range(nsb):
+	#for s in range(1,2):
 
 		f1 = plt.figure(1, figsize=figinch)	# for png backends, dpi is fixed at 100?
 		b = -1
@@ -224,6 +239,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 
 	title = fout + ' (cross, amp-time)'
 	for s in range(nsb):
+	#for s in range(1,2):
 
 		f1 = plt.figure(1, figsize=figinch)	# for png backends, dpi is fixed at 100?
 		b = -1
@@ -236,7 +252,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 				
 				p1 = plt.subplot(m, n, sub)
 
-				plt.plot(t2, np.abs(cross_ca[s, b]), ',', label=sb[s])
+				plt.plot(t2, np.abs(cross_ca[s, b]), '-', label=sb[s])
 				plt.title('Baseline ' + str(i) + str(j))
 				plt.xlabel('time (sec)')
 				plt.ylabel('<vis.amp>_chavg')
@@ -254,6 +270,7 @@ def corr2pdf(fout, time, auto, cross, **kwargs):
 
 	title = fout + ' (cross, pha-time)'
 	for s in range(nsb):
+	#for s in range(1,2):
 
 		f1 = plt.figure(1, figsize=figinch)	# for png backends, dpi is fixed at 100?
 		b = -1

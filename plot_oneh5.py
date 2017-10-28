@@ -20,6 +20,7 @@ cylim	= []			# plot range of amp-channel, override ys
 tylim	= []			# plot range of amp-time,    override ys
 pylim	= [-3.5, 3.5]		# plot range of pha plots (radians)
 logy	= False			# whether to plot amp plots in log-scale
+gs	= 0.			# default to not correct for gain-slope
 
 
 usage = '''
@@ -35,6 +36,7 @@ syntax: %s <All-in-One_H5> [options]
 	-logy			# set y-scale of amp-channel plots to log-scale
 	-cyr cymin cymax	# set a fixed yrange for amp-channel plots
 	-tyr tymin tymax	# set a fixed yrange for amp-time plots
+	-gs  gain-slope		# correct gain-slope, in dB, across full channel range
 
 ''' % (pg, chlim[0], chlim[1], ys)
 
@@ -92,6 +94,11 @@ while (inp):
 			print 'amp-time yrange invalid. using default range.'
 	elif (arg == '-logy'):
 		logy = True
+	elif (arg == '-gs'):
+		try:
+			gs = float(inp.pop(0))
+		except ValueError:
+			print 'gain slope invalid. no gain slope correction.'
 	else:
 		foneh5 = arg
 		if (os.path.isfile(foneh5)):
@@ -132,7 +139,8 @@ fout = fplt + '.pdf'
 corr2pdf(fout, time, auto, cross,
 	ys = ys, logy = logy,
 	tlim = tlim, chlim = chlim,
-	cylim = cylim, tylim = tylim
+	cylim = cylim, tylim = tylim,
+	gs = gs
 )
 
 
